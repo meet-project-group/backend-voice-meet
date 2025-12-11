@@ -3,7 +3,7 @@ import cors from "cors";
 import { Server as IOServer } from "socket.io";
 import { createServer } from "http";
 import dotenv from "dotenv";
-import "./peer-server";
+
 
 dotenv.config();
 
