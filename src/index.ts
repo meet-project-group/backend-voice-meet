@@ -2,8 +2,8 @@ import express from "express";
 import cors from "cors";
 import { Server as IOServer } from "socket.io";
 import { createServer } from "http";
-import { ExpressPeerServer } from "peer";
 import dotenv from "dotenv";
+import "./peer-server";
 
 dotenv.config();
 
@@ -13,42 +13,68 @@ app.use(express.json());
 
 const httpServer = createServer(app);
 
-/* =========================
-    SOCKET.IO — VOZ
-========================= */
+/* ================================================
+   REGISTRO REAL POR ROOM
+================================================= */
 const voiceRooms: Record<string, { peerId: string; username: string }[]> = {};
 
 const io = new IOServer(httpServer, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
   path: "/voice/socket.io",
 });
 
 io.on("connection", (socket) => {
   console.log("[socket] connected:", socket.id);
 
+  /* ================================================
+     JOIN
+  ================================================ */
   socket.on("join-voice-room", ({ roomId, peerId, username }) => {
     socket.join(roomId);
-
     socket.data.peerId = peerId;
     socket.data.username = username;
     socket.data.roomId = roomId;
 
     if (!voiceRooms[roomId]) voiceRooms[roomId] = [];
-    if (!voiceRooms[roomId].some(u => u.peerId === peerId)) {
+
+    // Evitar duplicados (caso extraño)
+    const exists = voiceRooms[roomId].some(u => u.peerId === peerId);
+    if (!exists) {
       voiceRooms[roomId].push({ peerId, username });
     }
 
+    // Enviar lista al usuario nuevo
     socket.emit("voice-room-users", voiceRooms[roomId]);
+
+    // Notificar a los demás
     socket.to(roomId).emit("user-connected", { peerId, username });
+
+    console.log(`[socket] ${username} (${peerId}) joined ${roomId}`);
   });
 
+  /* ================================================
+     DISCONNECT
+  ================================================ */
   socket.on("disconnect", () => {
     const { roomId, peerId } = socket.data;
 
     if (roomId && peerId) {
-      voiceRooms[roomId] = voiceRooms[roomId]?.filter(u => u.peerId !== peerId) || [];
-      if (voiceRooms[roomId]?.length === 0) delete voiceRooms[roomId];
+      // 1. Eliminar del registro
+      if (voiceRooms[roomId]) {
+        voiceRooms[roomId] = voiceRooms[roomId].filter(
+          (u) => u.peerId !== peerId
+        );
 
+        // 2. Si la sala queda vacía → eliminarla
+        if (voiceRooms[roomId].length === 0) {
+          delete voiceRooms[roomId];
+        }
+      }
+
+      // 3. Avisar al front
       socket.to(roomId).emit("user-disconnected", peerId);
     }
 
@@ -56,27 +82,13 @@ io.on("connection", (socket) => {
   });
 });
 
-/* =========================
-    PEERJS — VIDEO
-========================= */
-const peerServer = ExpressPeerServer(httpServer, {
-  path: "/", 
-});
+/* ================================================
+   HEALTH
+================================================ */
+app.get("/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// importante → esto evita conflictos
-app.use("/peerjs", peerServer);
-
-/* =========================
-    HEALTH
-========================= */
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
-/* =========================
-    START
-========================= */
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 3003;
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Unified Voice + PeerJS server running on port ${PORT}`);
+  console.log("Voice server running on port", PORT);
 });
-
