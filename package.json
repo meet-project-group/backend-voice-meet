@@ -5,8 +5,12 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:peer": "ts-node-dev --respawn --transpile-only src/peer-server.ts",
+
     "build": "tsc",
-    "start": "node dist/index.js"
+
+    "start": "node dist/index.js",
+    "start:peer": "node dist/peer-server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
